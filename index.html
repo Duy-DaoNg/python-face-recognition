@@ -78,9 +78,9 @@
           updateButton.disabled = false;
           stopButton.disabled = true;
         } else if (event.data === 'Door Unlocked') {
-          clientLog.innerText = "Door Unlocked"
+          alert("Door Unlocked")
         } else if (event.data === 'Time out') {
-          clientLog.innerText = "Time out, move to IDLE mode"
+          alert("Time out")
         } else if (event.data === "IDLE") {
           clientLog.innerText = "Press Start to start face recognize, Update to load data"
         }
