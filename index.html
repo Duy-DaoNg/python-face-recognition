@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>WebSocket Camera</title>
+  <style>
+    video {
+        border: solid 2px black;
+    }
+    div {
+        margin: auto;
+        width: 50%;
+        border: 3px solid green;
+        padding: 10px;
+        align-items: center;
+    }
+    h2 {
+        text-align: center;
+    }
+  </style>
+</head>
+<body>
+    <div>
+        <h2>Streaming Video</h2>
+        <video id="video" width="100%" height="auto" autoplay></video>
+        <canvas id="canvas" width="640" height="480" style="display: none;"></canvas>
+        <p>Message: <span id="log"></span></p>
+        <button onclick="startStreaming()" id="startButton">Start</button>
+        <button onclick="sendMessage('update')" id="updateButton">Update</button>
+        <button onclick="stopStreaming()" id="stopButton">Stop</button>
+    </div>
+  <script>
+    let socket;
+    let isStreaming = false;
+    let status = 'stop'
+    const startButton = document.getElementById('startButton');
+    const updateButton = document.getElementById('updateButton');
+    const stopButton = document.getElementById('stopButton');
+    const clientLog = document.getElementById('log');
+    // Function to create a WebSocket connection
+    function connectWebSocket() {
+        startButton.disabled = true;
+        updateButton.disabled = true;
+        stopButton.disabled = true;
+        socket = new WebSocket('ws://localhost:8080');
+      // Connection established event
+        socket.onopen = function() {
+          console.log('Socket connection established.');
+          clientLog.innerText="Successfully connected. Waiting for loading data"
+
+          // Re-enable buttons on reconnection
+          startButton.disabled = true;
+          updateButton.disabled = true;
+          stopButton.disabled = true;
+        };
+
+      // Message received event
+      socket.onmessage = function(event) {
+        console.log('Received message from server:', event.data);
+        // Handle different server messages here
+        if (event.data === 'Updating') {
+          startButton.disabled = true;
+          updateButton.disabled = true;
+          stopButton.disabled = true;
+          // Display image from client
+        } else if (event.data === 'Updated') {
+          startButton.disabled = false;
+          updateButton.disabled = false;
+          stopButton.disabled = true;
+          clientLog.innerText = "Press Start to start face recognize, Update to load data"
+        } else if (event.data === 'Face') {
+          startButton.disabled = true;
+          updateButton.disabled = true;
+          stopButton.disabled = false;
+        } else if (event.data === 'Faced') {
+          console.log('Stop received');
+          stopStreaming();
+          startButton.disabled = false;
+          updateButton.disabled = false;
+          stopButton.disabled = true;
+        } else if (event.data === 'Door Unlocked') {
+          clientLog.innerText = "Door Unlocked"
+        } else if (event.data === 'Time out') {
+          clientLog.innerText = "Time out, move to IDLE mode"
+        } else if (event.data === "IDLE") {
+          clientLog.innerText = "Press Start to start face recognize, Update to load data"
+        }
+
+      };
+
+      // Error event
+      // socket.onerror = function(error) {
+      //   console.error('Socket error:', error);
+      // };
+
+      // Connection closed event
+      socket.onclose = function() {
+        try {
+          turnOffCamera()
+        } catch (error) {
+        }
+        console.log('Socket connection closed.');
+        clientLog.innerText="Connection closed. Attempt reconnection after a 2s."
+        setTimeout(connectWebSocket, 2000);
+        // Attempt reconnection after a delay
+        startButton.disabled = true;
+        updateButton.disabled = true;
+        stopButton.disabled = true;
+      };
+    }
+
+    // Function to start streaming video
+    function startStreaming() {
+      const video = document.getElementById('video');
+      const canvas = document.getElementById('canvas');
+      const context = canvas.getContext('2d');
+
+      // Disable buttons
+      startButton.disabled = true;
+      updateButton.disabled = true;
+      stopButton.disabled = false;
+
+      // Request permission to access camera
+      navigator.mediaDevices.getUserMedia({ video: true })
+        .then(stream => {
+          // Assign the video stream to the video element
+          video.srcObject = stream;
+          isStreaming = true;
+
+          // Capture a frame from the video and send it to the server
+          function sendFrame() {
+            if (!isStreaming) return;
+
+            context.drawImage(video, 0, 0, canvas.width, canvas.height);
+            const frameData = canvas.toDataURL('image/jpeg');
+            socket.send(frameData);
+            requestAnimationFrame(sendFrame);
+          }
+
+          // Start sending frames to the server
+          requestAnimationFrame(sendFrame);
+          // Send 'start' message to server
+          sendMessage('start');
+        })
+        .catch(error => {
+          console.error('Error accessing camera:', error);
+          // Re-enable buttons on error
+          startButton.disabled = true;
+          updateButton.disabled = true;
+          stopButton.disabled = true;
+        });
+    }
+
+    // Function to stop streaming video
+    function stopStreaming() {
+      try {
+        turnOffCamera()
+      } catch (error) {
+        console.log(error)
+      }
+
+
+      // Disable buttons
+      startButton.disabled = true;
+      updateButton.disabled = true;
+      stopButton.disabled = true;
+
+      // Send 'stop' message to server
+      sendMessage('stop');
+    }
+    function turnOffCamera() {
+      const video = document.getElementById('video');
+      const stream = video.srcObject;
+      const tracks = stream.getTracks();
+
+      tracks.forEach(track => track.stop());
+
+      // Stop sending frames to the server
+      isStreaming = false;
+    }
+    // Function to send a message to the server
+    function sendMessage(message) {
+      if (message === 'update') {
+        try {
+          turnOffCamera()
+        } catch (error) {
+          console.log(error)
+        }
+        clientLog.innerText = "Server Loading Data..."
+        startButton.disabled = true;
+        updateButton.disabled = true;
+        stopButton.disabled = true;
+      }
+      socket.send(message);
+    }
+    function closeConnection() {
+      if (socket.readyState === WebSocket.OPEN) {
+        socket.close();
+      }
+    }
+
+    // Connect to WebSocket on page load
+    window.addEventListener('load', connectWebSocket);
+  </script>
+</body>
+</html>
